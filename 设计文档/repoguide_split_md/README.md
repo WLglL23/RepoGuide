@@ -87,8 +87,7 @@ v0 文本原型
 → v8 API Server
 → v9 Web UI
 ```
-
-前期不要急着做 Web，也不要一开始就堆复杂 Agent。RepoGuide 的核心竞争力应先落在：
+RepoGuide 的核心竞争力落在：
 
 - 本地仓库扫描；
 - 结构化索引；
