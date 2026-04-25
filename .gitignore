@@ -1,0 +1,13 @@
+.git
+node_modules
+target
+dist
+build
+out
+venv
+.venv
+__pycache__
+.idea
+.vscode
+.mypy_cache
+.pytest_cache
