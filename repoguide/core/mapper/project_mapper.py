@@ -141,14 +141,14 @@ class ProjectMapper:
         root = Path(root_path)
         root_name = root.name or str(root)
 
-        top_dirs = set()
-        top_files = set()
+        top_dirs = set()    # 子目录名
+        top_files = set()   # 子文件名
 
         for file in files:
             path = file.get("path")
             if not path:
                 continue
-
+            # 将路径拆分为元组（例如 "a/b/c.txt" → ('a','b','c.txt')）
             parts = Path(path).parts
 
             if not parts:

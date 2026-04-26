@@ -25,21 +25,21 @@ def format_project_map(project_map: Dict[str, Any]) -> str:
     lines = []
 
     # 标题
-    lines.append("RepoGuide v0 Project Map")
+    lines.append("「RepoGuide v0 Project Map」")
     lines.append("")
 
     # 项目根目录路径
-    lines.append("Project Root:")
+    lines.append("项目根目录路径 Project Root:")
     lines.append(str(project_map.get("root_path", "")))
     lines.append("")
 
     # 识别出的项目类型
-    lines.append("Detected Project Type:")
+    lines.append("识别出的项目类型 Detected Project Type:")
     lines.append(str(project_map.get("project_type", "unknown")))
     lines.append("")
 
     # 文件总数
-    lines.append("File Count:")
+    lines.append("文件总数 File Count:")
     lines.append(str(project_map.get("file_count", 0)))
     lines.append("")
 
@@ -68,15 +68,15 @@ def format_project_map(project_map: Dict[str, Any]) -> str:
         lines.append("")
 
     # 六大分类清单：重要文件、候选入口、配置、构建、测试、推荐运行命令
-    add_section("Important Files:", project_map.get("important_files", []))
-    add_section("Entrypoint Candidates:", project_map.get("entrypoint_candidates", []))
-    add_section("Config Candidates:", project_map.get("config_candidates", []))
-    add_section("Build Files:", project_map.get("build_files", []))
-    add_section("Test Files:", project_map.get("test_files", []))
-    add_section("Possible Run Commands:", project_map.get("possible_run_commands", []))
+    add_section("重要文件 Important Files:", project_map.get("important_files", []))
+    add_section("候选入口 Entrypoint Candidates:", project_map.get("entrypoint_candidates", []))
+    add_section("候选配置 Config Candidates:", project_map.get("config_candidates", []))
+    add_section("构建文件 Build Files:", project_map.get("build_files", []))
+    add_section("测试文件 Test Files:", project_map.get("test_files", []))
+    add_section("推荐运行命令 Possible Run Commands:", project_map.get("possible_run_commands", []))
 
     # 顶层目录结构（通常是预先格式化的多行字符串）
-    lines.append("Top-level Structure:")
+    lines.append("顶层目录结构 Top-level Structure:")
     lines.append(project_map.get("top_level_tree", ""))
 
     # 将所有行用换行符连接成最终字符串
