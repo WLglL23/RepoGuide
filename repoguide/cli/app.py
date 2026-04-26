@@ -1,28 +1,20 @@
 """
 RepoGuide CLI 应用
 
-当前 CLI 属于 v2.1 阶段的正式命令行入口雏形。
+当前 CLI 属于 v2.2 阶段，新增本地索引持久化支持。
 
 已支持命令：
-- version : 显示当前版本号
-- map     : 生成项目地图并输出格式化文本
-- init    : 初始化本地 .repoguide 目录结构
-
-当前 CLI 不包含：
-- LLM 问答
-- 向量检索
-- 接口解析
-- 调用链追踪
-- git diff 诊断
-- Patch 生成
-- 测试执行
-
-这些能力会在后续阶段基于 Core SDK 继续扩展。
+- version       : 显示当前版本号
+- map           : 输出项目地图（优先读取索引，支持 --refresh）
+- index         : 扫描项目并保存索引
+- init          : 初始化本地 .repoguide 目录结构
 
 设计原则：
-1. CLI 只做参数解析和输出，不直接承担核心业务逻辑。
-2. 真正的项目分析能力统一调用 Core SDK，即 RepoGuide.map()。
-3. CLI 输出暂时复用已有 format_project_map()，保持 v0/v1 输出稳定。
+1. CLI 只做参数解析和输出，核心逻辑由 Core SDK 提供。
+2. 增量索引能力：通过 repoguide index 固化扫描结果，
+   随后 repoguide map 直接读取索引，避免重复扫描。
+3. 当前使用 JSON 文件存储，后续可升级为 SQLite。
+4. CLI 不直接实现扫描、分类、索引生成逻辑，只调用 RepoGuide Core Facade。
 """
 
 from importlib.metadata import PackageNotFoundError, version as package_version
@@ -32,21 +24,14 @@ import typer
 
 from repoguide.core.mapper.project_map_formatter import format_project_map
 from repoguide.core.repoguide import RepoGuide
+from repoguide.storage.local_index_store import LocalIndexStore
 
 
 # -----------------------------------------------------------------------------
 # 版本号读取
 # -----------------------------------------------------------------------------
-# 优先从包元数据中读取版本号。
-#
-# 当项目通过以下命令安装后：
-#
-#     pip install -e .
-#
-# importlib.metadata 可以从 pyproject.toml / 安装元数据中读取版本。
-#
-# 如果当前代码还没有以包形式安装，例如直接 python repoguide/cli/app.py，
-# 则可能读取失败，此时回退到硬编码版本号。
+# 如果项目已经通过 pip install -e . 安装，则优先从包元数据读取版本。
+# 如果尚未安装，则回退到硬编码版本号。
 # -----------------------------------------------------------------------------
 try:
     VERSION = package_version("repoguide")
@@ -55,188 +40,16 @@ except PackageNotFoundError:
 
 
 # -----------------------------------------------------------------------------
-# Typer 应用对象
+# 默认配置文件内容
 # -----------------------------------------------------------------------------
-# 这里定义的是 CLI 根应用。
+# init 命令会写入：
 #
-# 安装后，pyproject.toml 中的：
+#   .repoguide/config.yml
 #
-#     [project.scripts]
-#     repoguide = "repoguide.cli.app:main"
-#
-# 会把 main() 注册成终端命令 repoguide。
+# 当前 v2.2 阶段只负责落盘，不真正参与扫描逻辑。
+# 后续可以新增 ConfigLoader，让 Scanner 读取 scan.ignore_dirs。
 # -----------------------------------------------------------------------------
-app = typer.Typer(
-    name="repoguide",
-    help="A local-first repository understanding tool for project handoff.",
-    no_args_is_help=True,
-)
-
-
-@app.command("version")
-def version_command() -> None:
-    """
-    显示 RepoGuide 当前版本。
-
-    示例：
-
-        repoguide version
-    """
-    typer.echo(f"RepoGuide {VERSION}")
-
-
-@app.command("map")
-def map_command(
-    path: str = typer.Argument(
-        ".",
-        help="项目根目录路径，默认为当前目录。",
-    ),
-) -> None:
-    """
-    分析指定路径的项目，生成并打印项目地图。
-
-    示例：
-
-        repoguide map .
-        repoguide map E:/STUDY/My/SomeProject
-
-    当前该命令内部调用：
-
-        RepoGuide.map(path)
-
-    然后将 ProjectMap 转换为 dict，交给已有 formatter 输出。
-    """
-    root = Path(path).expanduser().resolve()
-
-    if not root.exists():
-        typer.echo(f"Error: 路径不存在 - {path}", err=True)
-        raise typer.Exit(code=1)
-
-    if not root.is_dir():
-        typer.echo(f"Error: 目标不是目录 - {path}", err=True)
-        raise typer.Exit(code=1)
-
-    try:
-        typer.echo(f"Analyzing project at {root} ...\n")
-
-        # 通过 Core Facade 获取结构化 ProjectMap。
-        #
-        # CLI 不直接调用：
-        # - scan_repo
-        # - classify_files
-        # - SnapshotBuilder
-        # - ProjectMapper
-        #
-        # 这些内部流程都由 Core SDK 封装。
-        project_map = RepoGuide.map(str(root))
-
-        # 当前 formatter 仍然接收 dict。
-        # ProjectMap.to_dict() 用于兼容 v0/v1 的文本输出格式。
-        output = format_project_map(project_map.to_dict())
-        typer.echo(output)
-
-    except PermissionError as exc:
-        typer.echo(f"Permission error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    except ValueError as exc:
-        typer.echo(f"Invalid input: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    except Exception as exc:
-        # 第一版 CLI 先统一兜底，避免用户看到长堆栈。
-        # 后续可以增加 --debug 参数，在 debug 模式下打印完整 traceback。
-        typer.echo(f"Unexpected error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-
-@app.command("init")
-def init_command(
-    path: str = typer.Argument(
-        ".",
-        help="需要初始化 .repoguide 的项目目录，默认为当前目录。",
-    ),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="如果 config.yml 已存在，是否覆盖它。",
-    ),
-) -> None:
-    """
-    初始化 RepoGuide 本地工作目录。
-
-    示例：
-
-        repoguide init
-        repoguide init .
-        repoguide init E:/STUDY/My/SomeProject
-        repoguide init . --force
-
-    初始化后会创建：
-
-        .repoguide/
-          config.yml
-          indexes/
-          cache/
-          overlays/
-          traces/
-          patches/
-          logs/
-
-    注意：
-        当前 v2.1 只负责创建目录和默认配置。
-        暂时不会读取 config.yml 参与扫描逻辑。
-        配置读取会放到后续 v2.2 / v3 阶段。
-    """
-    root = Path(path).expanduser().resolve()
-
-    if not root.exists():
-        typer.echo(f"Error: 路径不存在 - {path}", err=True)
-        raise typer.Exit(code=1)
-
-    if not root.is_dir():
-        typer.echo(f"Error: 目标不是目录 - {path}", err=True)
-        raise typer.Exit(code=1)
-
-    base_dir = root / ".repoguide"
-
-    # 创建 .repoguide 根目录。
-    #
-    # exist_ok=True 的意义：
-    # - 如果目录不存在，则创建。
-    # - 如果目录已存在，不报错。
-    #
-    # 这样 init 命令可以重复执行，用来补齐缺失目录。
-    base_dir.mkdir(parents=True, exist_ok=True)
-
-    # 本地工作目录结构。
-    #
-    # indexes  : 后续保存 RepoIndex
-    # cache    : 后续保存缓存
-    # overlays : 后续保存 Workspace Overlay
-    # traces   : 后续保存执行 Trace
-    # patches  : 后续保存 PatchSuggestion
-    # logs     : 后续保存 RepoGuide 自身日志
-    subdirs = [
-        "indexes",
-        "cache",
-        "overlays",
-        "traces",
-        "patches",
-        "logs",
-    ]
-
-    for subdir in subdirs:
-        (base_dir / subdir).mkdir(parents=True, exist_ok=True)
-
-    config_path = base_dir / "config.yml"
-
-    # 默认配置文件。
-    #
-    # 当前只是落盘，不参与实际扫描逻辑。
-    # 后续可让 scanner / config loader 读取 scan.ignore_dirs。
-    config_content = """\
+DEFAULT_CONFIG_CONTENT = """\
 version: 1
 
 project:
@@ -266,14 +79,213 @@ test:
     - npm test
 """
 
+
+# -----------------------------------------------------------------------------
+# Typer 应用对象
+# -----------------------------------------------------------------------------
+app = typer.Typer(
+    name="repoguide",
+    help="A local-first repository understanding tool for project handoff.",
+    no_args_is_help=True,
+)
+
+
+def _resolve_project_root(path: str) -> Path:
+    """
+    校验并标准化项目路径。
+
+    这个函数用于 CLI 层，避免 index/map/init 每个命令都重复写路径校验逻辑。
+
+    Args:
+        path: 用户输入的项目路径。
+
+    Returns:
+        标准化后的绝对路径。
+
+    Raises:
+        typer.Exit:
+            当路径不存在或不是目录时退出。
+    """
+    root = Path(path).expanduser().resolve()
+
+    if not root.exists():
+        typer.echo(f"Error: 路径不存在 - {path}", err=True)
+        raise typer.Exit(code=1)
+
+    if not root.is_dir():
+        typer.echo(f"Error: 目标不是目录 - {path}", err=True)
+        raise typer.Exit(code=1)
+
+    return root
+
+
+@app.command("version")
+def version_command() -> None:
+    """
+    显示 RepoGuide 当前版本。
+
+    示例：
+        repoguide version
+    """
+    typer.echo(f"RepoGuide {VERSION}")
+
+
+@app.command("index")
+def index_command(
+    path: str = typer.Argument(
+        ".",
+        help="需要建立索引的项目目录，默认为当前目录。",
+    ),
+) -> None:
+    """
+    扫描项目并保存索引到 .repoguide/indexes/。
+
+    索引包含：
+    - repo_snapshot.json
+    - project_map.json
+
+    之后 repoguide map 可直接读取 project_map.json，
+    避免每次都重新扫描。
+    """
+    root = _resolve_project_root(path)
+
+    try:
+        typer.echo(f"Indexing project at {root} ...\n")
+
+        # 通过 Core Facade 执行索引：
+        # 1. 扫描项目
+        # 2. 生成 RepoSnapshot
+        # 3. 生成 ProjectMap
+        # 4. 保存 repo_snapshot.json 和 project_map.json
+        project_map = RepoGuide.index(str(root))
+
+        typer.echo("Index completed.\n")
+        typer.echo(f"Project Type:\n{project_map.project_type}\n")
+        typer.echo(f"File Count:\n{project_map.file_count}\n")
+        typer.echo("Saved:")
+        typer.echo("  .repoguide/indexes/repo_snapshot.json")
+        typer.echo("  .repoguide/indexes/project_map.json")
+        typer.echo("\nNext:")
+        typer.echo("  repoguide map")
+
+    except Exception as exc:
+        typer.echo(f"Error during indexing: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("map")
+def map_command(
+    path: str = typer.Argument(
+        ".",
+        help="项目根目录路径，默认为当前目录。",
+    ),
+    refresh: bool = typer.Option(
+        False,
+        "--refresh",
+        "-r",
+        help="强制重新扫描并更新索引。",
+    ),
+) -> None:
+    """
+    输出项目地图。
+
+    默认行为：
+    - 如果 .repoguide/indexes/project_map.json 存在且可读取，直接读取并输出。
+    - 如果索引不存在或损坏，则临时扫描并输出，但不保存索引。
+    - 使用 --refresh / -r 时，强制重新扫描并更新索引。
+    """
+    root = _resolve_project_root(path)
+
+    try:
+        store = LocalIndexStore(root)
+
+        # 注意：
+        # 不能只用 store.has_project_map() 判断是否使用了缓存。
+        # 因为 project_map.json 可能存在但内容损坏。
+        #
+        # load_project_map() 返回非 None，才说明缓存确实可用。
+        cached_before = store.load_project_map() is not None
+
+        if refresh:
+            typer.echo(f"Refreshing index for {root} ...\n")
+
+        project_map = RepoGuide.map(str(root), refresh=refresh)
+
+        if refresh:
+            typer.echo("Index refreshed.\n")
+        elif cached_before:
+            typer.echo("Using cached index.\n")
+        else:
+            typer.echo(
+                "No cached index found. Showing temporary scan result.\n"
+                "Tip: Run 'repoguide index .' to save the index.\n"
+            )
+
+        output = format_project_map(project_map.to_dict())
+        typer.echo(output)
+
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("init")
+def init_command(
+    path: str = typer.Argument(
+        ".",
+        help="需要初始化 .repoguide 的项目目录，默认为当前目录。",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="如果 config.yml 已存在，是否覆盖它。",
+    ),
+) -> None:
+    """
+    初始化 RepoGuide 本地工作目录。
+
+    创建目录结构：
+
+        .repoguide/
+          config.yml
+          indexes/
+          cache/
+          overlays/
+          traces/
+          patches/
+          logs/
+
+    当前 v2.2 阶段：
+    - init 只负责创建目录和默认配置。
+    - index 才负责写入 repo_snapshot.json 和 project_map.json。
+    """
+    root = _resolve_project_root(path)
+
+    base_dir = root / ".repoguide"
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    subdirs = [
+        "indexes",
+        "cache",
+        "overlays",
+        "traces",
+        "patches",
+        "logs",
+    ]
+
+    for subdir in subdirs:
+        (base_dir / subdir).mkdir(parents=True, exist_ok=True)
+
+    config_path = base_dir / "config.yml"
+
     if config_path.exists() and not force:
         typer.echo(f"RepoGuide structure already exists at {base_dir}")
         typer.echo(f"Skipped existing config: {config_path}")
         typer.echo("Use --force to overwrite config.yml.")
         return
 
-    config_path.write_text(config_content, encoding="utf-8")
-
+    config_path.write_text(DEFAULT_CONFIG_CONTENT, encoding="utf-8")
     typer.echo(f"Initialized RepoGuide structure at {base_dir}")
 
 
@@ -281,15 +293,18 @@ def main() -> None:
     """
     CLI 入口函数。
 
-    该函数会被 pyproject.toml 中的 project.scripts 注册为：
+    pyproject.toml 中应配置：
 
+        [project.scripts]
         repoguide = "repoguide.cli.app:main"
 
-    因此安装后可以直接执行：
+    安装后可以直接运行：
 
         repoguide version
+        repoguide init .
+        repoguide index .
         repoguide map .
-        repoguide init
+        repoguide map . --refresh
     """
     app()
 
