@@ -62,3 +62,19 @@ def test_cli_init_existing_dir_does_not_fail(tmp_path: Path):
     assert first.exit_code == 0
     assert second.exit_code == 0
     assert "Skipped existing config" in second.output
+
+
+def test_cli_init_writes_default_config_with_hidden_templates(tmp_path: Path):
+    """确认 init 生成的新配置包含新增字段"""
+    result = runner.invoke(app, ["init", str(tmp_path)])
+
+    assert result.exit_code == 0
+
+    config_path = tmp_path / ".repoguide" / "config.yml"
+    assert config_path.exists()
+
+    content = config_path.read_text(encoding="utf-8")
+
+    assert "include_hidden_templates" in content
+    assert ".env.example" in content
+    assert "allowed_commands" in content

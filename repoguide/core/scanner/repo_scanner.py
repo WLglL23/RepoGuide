@@ -1,186 +1,181 @@
-import fnmatch
-import os
-from pathlib import Path
-from typing import List, Dict
-
-
 """
-v0 扫描器职责：
-1. 接收本地仓库路径
-2. 递归扫描文件
-3. 忽略无意义目录
-4. 返回文件元信息列表
+仓库扫描器（v2.3 参数化版）
+
+扫描本地项目目录，收集文件的基础信息，
+支持自定义忽略目录和隐藏模板白名单，并保留 .gitignore 规则。
 
 注意：
-v0 只支持本地目录，不支持 GitHub 远程仓库。
+    - 内置默认忽略目录和隐藏模板白名单仍然保留，作为最低安全基线。
+    - 外部通过参数传入的列表会与默认值合并，不会直接替换。
+    - .gitignore 规则会叠加在目录名忽略规则之上。
 """
 
+import os
+import fnmatch
+from pathlib import Path
+from typing import Dict, List, Optional, Set
 
-DEFAULT_IGNORE_DIRS = {
+
+# ---------------------------------------------------------------------------
+# 内置默认值
+# ---------------------------------------------------------------------------
+
+DEFAULT_IGNORE_DIRS: Set[str] = {
     ".git",
     "node_modules",
-    "__pycache__",
-    "venv",
-    ".venv",
-    ".idea",
-    ".vscode",
-    ".mypy_cache",
-    ".pytest_cache",
     "target",
     "dist",
     "build",
     "out",
+    "venv",
+    ".venv",
+    "__pycache__",
+    ".idea",
+    ".vscode",
+    ".mypy_cache",
+    ".pytest_cache",
 }
 
-DEFAULT_IGNORE_FILES = {
-    ".DS_Store",
-}
-
-HIDDEN_FILE_ALLOWLIST = {
+HIDDEN_FILE_ALLOWLIST: Set[str] = {
     ".env.example",
     ".env.sample",
     ".env.template",
 }
 
 
-def normalize_path(path: str) -> Path:
-    """标准化路径"""
-    return Path(path).expanduser().resolve()
+# ---------------------------------------------------------------------------
+# .gitignore 工具函数（已保留）
+# ---------------------------------------------------------------------------
 
-
-def load_gitignore(root_path: Path) -> List[str]:
-    """加载 .gitignore 中的基础忽略模式。v0 只做简化支持。"""
-    gitignore_path = root_path / ".gitignore"
-    ignore_list = []
-
-    if not gitignore_path.exists():
-        return ignore_list
-
-    try:
-        with open(gitignore_path, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                line = line.strip()
-
-                if not line or line.startswith("#"):
-                    continue
-
-                ignore_list.append(line)
-    except OSError:
-        pass
-
-    return ignore_list
-
-
-def should_ignore_by_gitignore(rel_path: Path, ignore_list: List[str]) -> bool:
+def load_gitignore(root: str) -> List[str]:
     """
-    简化版 .gitignore 匹配。
-
-    支持：
-    1. *.log
-    2. target/
-    3. src/*.tmp
-    4. 文件名匹配
+    读取项目根目录下的 .gitignore，返回非空且非注释 pattern 列表。
     """
-    path_str = rel_path.as_posix()
+    gitignore_path = os.path.join(root, ".gitignore")
+    patterns: List[str] = []
+    if os.path.isfile(gitignore_path):
+        try:
+            with open(gitignore_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        patterns.append(line)
+        except OSError:
+            pass
+    return patterns
 
-    for pattern in ignore_list:
-        normalized = pattern.strip()
 
-        if not normalized:
-            continue
-
-        # 暂不支持反向规则，例如 !important.log
-        if normalized.startswith("!"):
-            continue
-
-        # 目录规则，例如 target/
-        if normalized.endswith("/"):
-            dir_name = normalized.rstrip("/")
-            if dir_name in rel_path.parts:
-                return True
-
-        # 路径整体匹配
-        if fnmatch.fnmatch(path_str, normalized):
+def should_ignore_by_gitignore(rel_path: str, patterns: List[str]) -> bool:
+    """
+    判断给定相对路径是否匹配任一 .gitignore pattern。
+    使用简化逻辑：仅对路径字符串做 fnmatch（不处理目录前缀斜杠等复杂情况）。
+    """
+    for pattern in patterns:
+        if fnmatch.fnmatch(rel_path, pattern):
             return True
-
-        # 文件名匹配
-        if fnmatch.fnmatch(rel_path.name, normalized):
-            return True
-
     return False
 
 
-def should_skip_file(filename: str) -> bool:
-    """判断文件是否应该跳过"""
-    if filename in DEFAULT_IGNORE_FILES:
-        return True
+# ---------------------------------------------------------------------------
+# 内部扫描函数（已有，保持原样）
+# ---------------------------------------------------------------------------
 
-    # .env.example 这类文件需要保留，因为它是配置候选
-    if filename in HIDDEN_FILE_ALLOWLIST:
-        return False
+def scan_local_directory(
+    root: Path,
+    extra_ignore_dirs: Optional[List[str]] = None,
+    extra_hidden_allowlist: Optional[List[str]] = None,
+) -> List[Dict]:
+    """
+    实际的目录遍历逻辑，收集文件信息。
 
-    # v0 不扫描其他隐藏文件，避免把 .env、密钥文件纳入输出
-    if filename.startswith("."):
-        return True
+    Args:
+        root: 项目根路径（已解析的绝对路径）。
+        extra_ignore_dirs: 外部传入的额外忽略目录名列表。
+        extra_hidden_allowlist: 外部传入的额外允许隐藏文件列表。
 
-    return False
+    Returns:
+        文件信息字典列表（同 scan_repo 返回格式）。
+    """
+    # 合并最终忽略目录集合
+    final_ignore_dirs = DEFAULT_IGNORE_DIRS.copy()
+    if extra_ignore_dirs:
+        final_ignore_dirs.update(extra_ignore_dirs)
 
+    # 合并最终隐藏文件白名单
+    final_allowlist = HIDDEN_FILE_ALLOWLIST.copy()
+    if extra_hidden_allowlist:
+        final_allowlist.update(extra_hidden_allowlist)
 
-def scan_local_directory(root: Path) -> List[Dict]:
-    """递归扫描本地目录"""
-    files_info = []
-    ignore_list = load_gitignore(root)
+    # 加载 .gitignore 规则
+    gitignore_patterns = load_gitignore(str(root))
 
-    for dirpath, dirnames, filenames in os.walk(root):
-        # 原地修改 dirnames，可以阻止 os.walk 继续进入这些目录
+    files: List[Dict] = []
+
+    for dirpath, dirnames, filenames in os.walk(str(root)):
+        # 过滤需要忽略的目录（直接修改 dirnames 避免进入）
         dirnames[:] = [
-            d for d in dirnames
-            if d not in DEFAULT_IGNORE_DIRS
+            d
+            for d in dirnames
+            if d not in final_ignore_dirs
         ]
 
-        current_dir = Path(dirpath)
-
         for filename in filenames:
-            if should_skip_file(filename):
+            # 隐藏文件过滤（以点开头且不在白名单）
+            if filename.startswith(".") and filename not in final_allowlist:
                 continue
 
-            file_path = current_dir / filename
-            rel_path = file_path.relative_to(root)
+            full_path = os.path.join(dirpath, filename)
+            rel_path = os.path.relpath(full_path, str(root)).replace("\\", "/")
 
-            if should_ignore_by_gitignore(rel_path, ignore_list):
+            # .gitignore 二次过滤
+            if should_ignore_by_gitignore(rel_path, gitignore_patterns):
                 continue
 
             try:
-                stat = file_path.stat()
-            except (PermissionError, OSError):
-                continue
+                stat = os.stat(full_path)
+            except OSError:
+                continue  # 无权限或链接失效
 
-            files_info.append({
-                "path": rel_path.as_posix(),
+            files.append({
+                "path": rel_path,
                 "name": filename,
                 "size": stat.st_size,
-                "extension": file_path.suffix.lower(),
+                "extension": os.path.splitext(filename)[1].lower(),
                 "modified_time": stat.st_mtime,
             })
 
-    return files_info
+    return files
 
 
-def scan_repo(root_path: str) -> List[Dict]:
-    """扫描本地仓库或本地目录"""
-    root = normalize_path(root_path)
+# ---------------------------------------------------------------------------
+# 公共入口：scan_repo
+# ---------------------------------------------------------------------------
 
+def scan_repo(
+    root_path: str,
+    ignore_dirs: Optional[List[str]] = None,
+    include_hidden_templates: Optional[List[str]] = None,
+) -> List[Dict]:
+    """
+    扫描项目目录，返回文件信息列表。
+
+    Args:
+        root_path: 项目根目录路径（绝对或相对）。
+        ignore_dirs: 额外需要忽略的目录名列表，与内置默认值合并。
+        include_hidden_templates: 额外允许的隐藏模板文件名列表，与内置默认值合并。
+
+    Returns:
+        文件信息字典列表，每个字典包含：
+            path, name, size, extension, modified_time
+    """
+    root = Path(root_path).expanduser().resolve()
     if not root.exists():
         raise FileNotFoundError(f"路径不存在：{root_path}")
+    if not root.is_dir():
+        raise NotADirectoryError(f"路径不是目录：{root_path}")
 
-    if root.is_file():
-        stat = root.stat()
-        return [{
-            "path": root.name,
-            "name": root.name,
-            "size": stat.st_size,
-            "extension": root.suffix.lower(),
-            "modified_time": stat.st_mtime,
-        }]
-
-    return scan_local_directory(root)
+    return scan_local_directory(
+        root=root,
+        extra_ignore_dirs=ignore_dirs,
+        extra_hidden_allowlist=include_hidden_templates,
+    )

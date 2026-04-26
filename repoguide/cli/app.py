@@ -25,6 +25,7 @@ import typer
 from repoguide.core.mapper.project_map_formatter import format_project_map
 from repoguide.core.repoguide import RepoGuide
 from repoguide.storage.local_index_store import LocalIndexStore
+from repoguide.config.config_loader import ConfigLoader
 
 
 # -----------------------------------------------------------------------------
@@ -277,16 +278,18 @@ def init_command(
     for subdir in subdirs:
         (base_dir / subdir).mkdir(parents=True, exist_ok=True)
 
-    config_path = base_dir / "config.yml"
+        # 使用配置加载器处理 config.yml
+        config_path = ConfigLoader.config_path(root)
+        config_exists_before = config_path.exists()
 
-    if config_path.exists() and not force:
-        typer.echo(f"RepoGuide structure already exists at {base_dir}")
-        typer.echo(f"Skipped existing config: {config_path}")
-        typer.echo("Use --force to overwrite config.yml.")
-        return
+        ConfigLoader.create_default_config(root, force=force)
 
-    config_path.write_text(DEFAULT_CONFIG_CONTENT, encoding="utf-8")
-    typer.echo(f"Initialized RepoGuide structure at {base_dir}")
+        if config_exists_before and not force:
+            typer.echo(f"RepoGuide structure already exists at {base_dir}")
+            typer.echo(f"Skipped existing config: {config_path}")
+            typer.echo("Use --force to overwrite config.yml.")
+        else:
+            typer.echo(f"Initialized RepoGuide structure at {base_dir}")
 
 
 def main() -> None:
