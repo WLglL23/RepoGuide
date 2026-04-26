@@ -1,20 +1,32 @@
-node_modules/
-target/
-dist/
-build/
-out/
+# Python packaging metadata
+*.egg-info/
 
-venv/
-.venv/
-
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 
+# Virtual environments
+venv/
+.venv/
+
+# Test / type-check cache
 .pytest_cache/
 .mypy_cache/
 
+# IDE
 .idea/
 .vscode/
 
+# Build outputs
+dist/
+build/
+out/
+target/
+node_modules/
+
+# Local env
 .env
+
+# RepoGuide local runtime files
+.repoguide/

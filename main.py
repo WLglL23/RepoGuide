@@ -32,7 +32,7 @@ def main() -> int:
     当前只支持一个位置参数 path：
 
         python main.py .
-        python main.py E:/STUDY/My/SomeProject
+        python main.py 绝对路径
 
     Returns:
         0 表示成功。
