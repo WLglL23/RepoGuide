@@ -29,8 +29,7 @@ Completed foundation:
 
 Not implemented yet:
 - Java/Spring parser.
-- API route extraction wired into indexing.
-- Symbol index builder wired into storage.
+- RepoIndex storage integration.
 - Call graph.
 - LLM Q&A.
 - git diff diagnosis.
@@ -81,12 +80,13 @@ The Python parser has two parser-only slices implemented:
 - Uses Python standard library `ast`.
 - Extracts top-level functions, classes, and class methods into `CodeSymbol`.
 - Extracts simple FastAPI route decorators into `ApiEndpoint`, such as `@app.get("/path")` and `@router.post("/path")`.
-- Does not yet feed symbols into `RepoIndex` or local storage.
+- `RepoIndexBuilder` can aggregate `RepoSnapshot`, `ProjectMap`, parser symbols, and API endpoints into `RepoIndex`.
+- Does not yet save `RepoIndex` to local storage.
 
 ## Next Suggested Step
 
-Wire parser results into indexing:
+Wire RepoIndex into storage:
 
-- Add a small RepoIndex builder.
-- Feed `PythonParser` symbols and API endpoints into `RepoIndex`.
-- Keep storage/CLI integration for a later step if the builder is clean.
+- Add `repo_index.json` support to `LocalIndexStore`.
+- Add `save_repo_index()`, `load_repo_index()`, and `has_repo_index()`.
+- Keep CLI integration for a later step.
