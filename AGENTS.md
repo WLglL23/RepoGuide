@@ -28,8 +28,6 @@ Completed foundation:
   - `RepoIndex`
 
 Not implemented yet:
-
-- FastAPI route extraction.
 - Java/Spring parser.
 - API route extraction wired into indexing.
 - Symbol index builder wired into storage.
@@ -77,18 +75,18 @@ Avoid adding large speculative design documents. If a design is needed, add a co
 
 ## Current Parser Status
 
-The first Python parser slice is implemented:
+The Python parser has two parser-only slices implemented:
 
 - `repoguide/core/parser/python_parser.py`
 - Uses Python standard library `ast`.
 - Extracts top-level functions, classes, and class methods into `CodeSymbol`.
-- Does not yet extract FastAPI routes.
+- Extracts simple FastAPI route decorators into `ApiEndpoint`, such as `@app.get("/path")` and `@router.post("/path")`.
 - Does not yet feed symbols into `RepoIndex` or local storage.
 
 ## Next Suggested Step
 
-Extend parsing toward FastAPI routes:
+Wire parser results into indexing:
 
-- Recognize `@app.get(...)`, `@app.post(...)`, `@router.get(...)`, etc.
-- Convert route decorators into `ApiEndpoint`.
-- Keep this as parser-only work before wiring it into `RepoIndex`.
+- Add a small RepoIndex builder.
+- Feed `PythonParser` symbols and API endpoints into `RepoIndex`.
+- Keep storage/CLI integration for a later step if the builder is clean.

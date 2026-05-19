@@ -19,13 +19,46 @@ def test_python_parser_extracts_class_method_and_function(tmp_path: Path):
         encoding="utf-8",
     )
 
-    symbols = PythonParser.parse_file(
+    result = PythonParser.parse_file(
         str(source_file),
         relative_path="service.py",
     )
 
+    symbols = result.symbols
     summary = {(symbol.kind, symbol.name, symbol.parent) for symbol in symbols}
 
     assert ("class", "UserService", "") in summary
     assert ("method", "create_user", "UserService") in summary
     assert ("function", "main", "") in summary
+
+
+def test_python_parser_extracts_fastapi_endpoint(tmp_path: Path):
+    source_file = tmp_path / "api.py"
+    source_file.write_text(
+        "\n".join(
+            [
+                "from fastapi import FastAPI",
+                "",
+                "app = FastAPI()",
+                "",
+                '@app.get("/users")',
+                "def list_users():",
+                "    return []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = PythonParser.parse_file(
+        str(source_file),
+        relative_path="api.py",
+    )
+
+    assert len(result.api_endpoints) == 1
+
+    endpoint = result.api_endpoints[0]
+    assert endpoint.method == "GET"
+    assert endpoint.path == "/users"
+    assert endpoint.handler == "list_users"
+    assert endpoint.file_path == "api.py"
+    assert endpoint.framework == "fastapi"

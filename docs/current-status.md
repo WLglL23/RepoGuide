@@ -23,7 +23,7 @@ RepoGuide 当前真实阶段是：本地扫描 + 项目地图生成 + 本地 JSO
 | 本地索引 | 已实现基础版本 | `LocalIndexStore` 将 `RepoSnapshot` 和 `ProjectMap` 保存为 `.repoguide/indexes/repo_snapshot.json`、`.repoguide/indexes/project_map.json`。 |
 | CLI | 已实现基础命令 | `repoguide/cli/app.py` 声明 Typer 命令 `version`、`init`、`index`、`map`。当前 `tests/test_cli.py` 已通过。 |
 | 配置读取 | 已实现基础集成 | `ConfigLoader`、`RepoGuideConfig`、`DEFAULT_CONFIG_YAML` 已存在，并传入 `SnapshotBuilder` 影响扫描；`test.allowed_commands` 目前只是配置字段，尚未被测试执行器使用。 |
-| 接口模型 | 已起步 | `ApiEndpoint` 已有 dataclass 和 `to_dict()` / `from_dict()`，但还没有 API 路由抽取逻辑。 |
+| FastAPI 路由解析 | 已实现 parser 层第一步 | `PythonParser` 可识别简单的 `@app.get("/path")`、`@router.post("/path")` 等装饰器并生成 `ApiEndpoint`；尚未接入 RepoIndex。 |
 | Python 符号解析 | 已实现第一步 | `PythonParser` 使用标准库 `ast` 提取顶层函数、类、类方法到 `CodeSymbol`；尚未接入 RepoIndex。 |
 | RepoIndex 聚合模型 | 已起步 | `RepoIndex` 已能聚合 snapshot、project_map、symbols、api_endpoints，但还没有 builder 或 storage 接入。 |
 | git diff 诊断 | 未实现 | 当前没有读取 `git status`、`git diff` 并定位问题的核心模块。 |
@@ -309,10 +309,9 @@ RepoGuide.index/map/build_snapshot 加载 ConfigLoader
 
 ## 下一步建议
 
-1. 扩展 FastAPI decorator 识别，把 `@app.get()`、`@router.post()` 等提取为 `ApiEndpoint`。
-2. 新增 RepoIndex builder：把 `RepoSnapshot`、`ProjectMap`、symbols、api_endpoints 聚合为 `RepoIndex`。
-3. 扩展 `LocalIndexStore` 保存和读取 `repo_index.json`。
-4. 最后再考虑 CLI 展示命令，例如 `repoguide symbols` 或 `repoguide apis`。
+1. 新增 RepoIndex builder：把 `RepoSnapshot`、`ProjectMap`、symbols、api_endpoints 聚合为 `RepoIndex`。
+2. 扩展 `LocalIndexStore` 保存和读取 `repo_index.json`。
+3. 最后再考虑 CLI 展示命令，例如 `repoguide symbols` 或 `repoguide apis`。
 
 ## 一句话路线判断
 
