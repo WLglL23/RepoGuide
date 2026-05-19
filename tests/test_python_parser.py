@@ -62,3 +62,51 @@ def test_python_parser_extracts_fastapi_endpoint(tmp_path: Path):
     assert endpoint.handler == "list_users"
     assert endpoint.file_path == "api.py"
     assert endpoint.framework == "fastapi"
+
+
+def test_python_parser_extracts_async_fastapi_endpoint(tmp_path: Path):
+    source_file = tmp_path / "api.py"
+    source_file.write_text(
+        "\n".join(
+            [
+                "from fastapi import FastAPI",
+                "",
+                "app = FastAPI()",
+                "",
+                '@app.get("/users")',
+                "async def list_users():",
+                "    return []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = PythonParser.parse_file(
+        str(source_file),
+        relative_path="api.py",
+    )
+
+    assert len(result.api_endpoints) == 1
+    assert result.api_endpoints[0].method == "GET"
+    assert result.api_endpoints[0].handler == "list_users"
+
+
+def test_python_parser_ignores_non_fastapi_get_decorator(tmp_path: Path):
+    source_file = tmp_path / "cache.py"
+    source_file.write_text(
+        "\n".join(
+            [
+                '@cache.get("/users")',
+                "def load_users():",
+                "    return []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = PythonParser.parse_file(
+        str(source_file),
+        relative_path="cache.py",
+    )
+
+    assert result.api_endpoints == []

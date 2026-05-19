@@ -8,6 +8,9 @@ from repoguide.core.parser.python_parse_result import PythonParseResult
 
 
 class PythonParser:
+    HTTP_METHODS = {"get", "post", "put", "delete", "patch"}
+    FASTAPI_ROUTE_RECEIVERS = {"app", "router"}
+
     @staticmethod
     def parse_file(
         file_path: str,
@@ -25,6 +28,7 @@ class PythonParser:
         symbols: list[CodeSymbol] = []
 
         api_endpoints: list[ApiEndpoint] = []
+        function_nodes = (ast.FunctionDef, ast.AsyncFunctionDef)
 
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
@@ -38,7 +42,7 @@ class PythonParser:
                 )
 
                 for child in node.body:
-                    if isinstance(child, ast.FunctionDef):
+                    if isinstance(child, function_nodes):
                         symbols.append(
                             PythonParser._build_symbol(
                                 node=child,
@@ -49,7 +53,7 @@ class PythonParser:
                             )
                         )
 
-            elif isinstance(node, ast.FunctionDef):
+            elif isinstance(node, function_nodes):
                 symbols.append(
                     PythonParser._build_symbol(
                         node=node,
@@ -97,8 +101,6 @@ class PythonParser:
         file_path: str,
         line_number: int,
     ) -> ApiEndpoint | None:
-        http_methods = {"get", "post", "put", "delete", "patch"}
-
         if not isinstance(decorator, ast.Call):
             return None
 
@@ -106,8 +108,14 @@ class PythonParser:
         if not isinstance(func, ast.Attribute):
             return None
 
+        if not isinstance(func.value, ast.Name):
+            return None
+
+        if func.value.id not in PythonParser.FASTAPI_ROUTE_RECEIVERS:
+            return None
+
         method = func.attr.lower()
-        if method not in http_methods:
+        if method not in PythonParser.HTTP_METHODS:
             return None
 
         if not decorator.args:
@@ -152,7 +160,7 @@ class PythonParser:
 
     @staticmethod
     def _extract_fastapi_endpoints_from_function(
-        node: ast.FunctionDef,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
         file_path: str,
     ) -> list[ApiEndpoint]:
         endpoints: list[ApiEndpoint] = []
